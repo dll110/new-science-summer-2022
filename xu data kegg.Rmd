@@ -1,0 +1,161 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+
+
+
+#library(GEOquery)
+#gse <- getGEO("GSE84498")
+#liver.data <- gse$GSE84498_series_matrix.txt.gz@assayData$exprs
+
+library(readxl)
+kegg.list <- as.data.frame(read_xlsx("~/Downloads/41586_2017_BFnature21065_MOESM65_ESM.xlsx", skip=1, sheet = 2))
+kegg.list$kegg_pair <- paste(kegg.list$Enzyme1,kegg.list$Enzyme2,sep="-")
+
+#get data.xu
+data.xu2 <- data.xu
+data.xu2[,1] <- tolower(data.xu[,1])
+```
+
+```{r}
+
+length(names(table(kegg.list$Enzyme1))) #1236
+length(intersect(names(table(kegg.list$Enzyme1)),names(table(data.xu2$external_gene_name)))) #1229/1236
+setdiff(names(table(kegg.list$Enzyme1)),names(table(data.xu2$external_gene_name))) #"agpat9"   "ept1"     "prune"    "suv420h1" "suv420h2" "whsc1"    "whsc1l1" 
+
+length(names(table(kegg.list$Enzyme2))) #1247
+length(intersect(names(table(kegg.list$Enzyme2)),names(table(data.xu2$external_gene_name)))) #1241/1247
+setdiff(names(table(kegg.list$Enzyme2)),names(table(data.xu2$external_gene_name))) #"agpat9"   "ept1"     "suv420h1" "suv420h2" "whsc1"    "whsc1l1" 
+
+#fix mappings
+library(plyr)
+kegg.list[,1] <- mapvalues(kegg.list[,1], from=c("agpat9","ept1", "prune", "suv420h1", "suv420h2", "whsc1", "whsc1l1") ,to=c("gpat3", "sell", "prune1", "kmt5b", "kmt5c", "nsd2", "nsd3"))
+kegg.list[,2] <- mapvalues(kegg.list[,2], from=c("agpat9","ept1", "suv420h1", "suv420h2", "whsc1", "whsc1l1") ,to=c("gpat3", "sell", "kmt5b", "kmt5c", "nsd2", "nsd3"))
+
+# check for mismapping/labeling
+length(intersect(names(table(kegg.list$Enzyme1)),names(table(data.xu2$external_gene_name)))) #1236/1236
+length(intersect(names(table(kegg.list$Enzyme2)),names(table(data.xu2$external_gene_name)))) #1247/1247
+
+```
+
+
+```{r}
+## 1. method from "Single-Cell Analyses Inform Mechanisms of Myeloid-Targeted Therapies in Colon Cancer"
+
+#make pairs and values dataframe
+kegg.e1 <- merge(kegg.list[,c("kegg_pair","Enzyme1","Pathway")],unique(data.xu2[,c(1,3,4)]),by.x="Enzyme1",by.y="external_gene_name")
+kegg.e2 <- merge(kegg.list[,c("kegg_pair","Enzyme2","Pathway")],unique(data.xu2[,c(1,3,4)]),by.x="Enzyme2",by.y="external_gene_name")
+#kegg.df <- merge(kegg.e1,kegg.e2,by="kegg_pair")
+
+#calculate significant lrpair scores
+kegg.e1$log2diff <- log2(kegg.e1$WT_MEF+1)-log2(kegg.e1$WT_BMDM+1)
+kegg.e2$log2diff <- log2(kegg.e2$WT_MEF+1)-log2(kegg.e2$WT_BMDM+1)
+kegg.df <- unique(merge(kegg.e1,unique(kegg.e2),by=c("kegg_pair","Pathway")))
+
+
+#get sig differentially expressed receptor-ligand pairs of opposite expression
+head(kegg.df[order(-abs(kegg.df$log2diff.x-kegg.df$log2diff.y)),],30)
+kegg.df$m1 <- abs(kegg.df$log2diff.x-kegg.df$log2diff.y)
+
+kegg.df.ordered <- kegg.df[order(-abs(kegg.df$log2diff.x-kegg.df$log2diff.y)),]
+kegg.df.ordered <- kegg.df[order(-kegg.df$m1),]
+
+fwrite(kegg.df.ordered,file="~/Documents/Xu2018MEFBMDM_KEGGpairs.csv")
+
+kegg.df.ordered.unique <- unique(kegg.df.ordered[,-2])
+
+fwrite(kegg.df.ordered.unique,file="~/Documents/Xu2018MEFBMDM_KEGGpairs_unique.csv")
+```
+
+```{r}
+table(head(kegg.df[order(-abs(kegg.df$log2diff.x-kegg.df$log2diff.y)),2],60))
+```
+
+```{r}
+##pathview?
+
+library(pathview)
+library(org.Mm.eg.db)
+
+#x <- org.Mm.egPATH
+#mapped_genes <- mappedkeys(x)
+#xx <- as.list(x[mapped_genes])
+
+y <- org.Mm.egSYMBOL
+mapped_genes <- mappedkeys(y)
+yy <- as.list(y[mapped_genes])
+yyy <- as.data.frame(matrix(unlist(yy)))
+yyy$entrez <- as.numeric(names(yy))
+
+symbol_entrez.mapping <- yyy
+colnames(symbol_entrez.mapping)[1] <- "symbol"
+write.table(symbol_entrez.mapping,"symbol_entrez_mapping.csv", row.names = FALSE)
+
+length(intersect(names(yy),names(xx)))
+length(intersect(yyy$V1,data.xu$external_gene_name)) #6403
+length(intersect(names(gse16873.d1),names(xu.pv.d)))
+
+data.xu$log2diff <- log2(data.xu$WT_MEF+1)-log2(data.xu$WT_BMDM+1)
+xu.pv <- merge(yyy,data.xu[,c(1,7)],by.x = "V1",by.y="external_gene_name")
+xu.pv.d <- as.numeric(xu.pv[,3])
+names(xu.pv.d) <- xu.pv$entrez
+
+pv.out <- pathview(gene.data = xu.pv.d, pathway.id = "00480", species = "mmu", out.suffix = "gse104511", kegg.native = T)
+pv.out <- pathview(gene.data = xu.pv.d, pathway.id = "00980", species = "mmu", out.suffix = "gse104511", kegg.native = T)
+```
+
+```{r}
+library(igraph)
+
+xu.graph <- as.matrix(head(kegg.df.ordered.unique[,c(2,6)],50))
+g1 <- graph_from_edgelist(as.matrix(head(kegg.df.ordered.unique[,c(2,6)],100)),directed = T)
+#g1 <- graph_from_data_frame(d=as.matrix(head(kegg.df.ordered.unique[,c(2,6)],50)),vertices=,directed = T)
+plot(g1)
+
+cell_type <-data.xu[match(names(V(g1)),tolower(data.xu$external_gene_name)),c(1,3,4)]
+cell_type$max <- as.integer(cell_type$WT_MEF > cell_type$WT_BMDM) + 1
+colrs <- c("gold", "tomato")
+cell_type$color <- colrs[cell_type$max]
+V(g1)$color <- cell_type$color
+
+plot(g1, edge.arrow.size=.2, edge.curved=0, vertex.label.cex=.7, vertex.size=7)
+legend(x=-1.5, y=-1.1, c("> in BMDM","> in MEF"), pch=21,
+       col="#777777", pt.bg=colrs, pt.cex=2, cex=.8, bty="n", ncol=1)
+
+g1.list <- [decompose.graph(g1)]
+g1.subgraph.forkegg <- xu.pv[match(names(V(g1.list[[4]])),tolower(xu.pv$V1)),]
+write.table(g1.subgraph.forkegg[,c(1,2)],file="kegg_upload.txt",row.names=FALSE,quote=FALSE)
+```
+
+
+```{r}
+kegg.color <- xu.pv[match(head(kegg.df.ordered.unique[,c(2)],100),tolower(xu.pv$V1)),]
+kegg.color <- xu.pv[match(names(V(g1.list[[1]])),tolower(xu.pv$V1)),] ##list for subgraphs
+kegg.color <- xu.pv[match(names(V(g1)),tolower(xu.pv$V1)),]
+kegg.color$cell_type <- (kegg.color$log2diff < 0) + 1
+kegg.color$color <- colrs[kegg.color$cell_type]
+
+write.table(kegg.color[,c(2,5)],file="kegg_upload.txt",row.names=FALSE,quote=FALSE)
+data.xu <- as.integer(data.xu$WT_MEF > data.xu$WT_BMDM) + 1
+
+
+
+```
+
+
+```{r}
+## 2. liver zonation paper method
+#'mean normalized'; log2?
+kegg.df[order(-(kegg.df$WT_MEF.x-kegg.df$WT_BMDM.x)*(kegg.df$WT_MEF.y-kegg.df$WT_BMDM.y)),]
+m2 <- (kegg.df$WT_MEF.x-kegg.df$WT_BMDM.x)*(kegg.df$WT_MEF.y-kegg.df$WT_BMDM.y)
+score <- cbind(m1,m2)
+score$pair <- kegg.df$kegg_pair
+```
+
+```{r}
+cor(m1,m2)
+```
+

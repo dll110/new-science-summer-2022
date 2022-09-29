@@ -1,0 +1,161 @@
+---
+title: "how to complete cell circuits?"
+output: html_notebook
+---
+
+```{r}
+library(KEGGREST)
+library("EnrichmentBrowser")
+
+mmu.pathways <- getGenesets(org = "mmu", db = "kegg", cache = TRUE, return.type="list")
+
+library("org.Mm.eg.db")
+
+mapped <- mappedkeys(org.Mm.egPATH2EG)
+L <- as.list(org.Mm.egPATH2EG[mapped])
+
+Kegg_ID <- names(L) #n=225
+
+
+##delete
+Gene_IDs <- sapply(L, paste, collapse=",")
+
+mmu.pathways <- cbind(Kegg_ID, Gene_IDs)
+write.table(cbind(Kegg_ID, Gene_IDs), file="KEGG to Genes.txt", sep="\t", row.names=FALSE, col.names=FALSE)
+```
+
+```{r}
+#xu data wtih entrez id appended
+data.xu.entrez <- merge(yyy,data.xu[,c(1,3,4)],by.x = "V1",by.y="external_gene_name")
+write.table(data.xu.entrez,"data_xu_entrez.csv", row.names = FALSE)
+```
+
+
+```{r}
+## tally compeleteness of pathway
+data.xu.entrez$total <- rowSums(data.xu.entrez[,c(3,4)])
+
+
+## evaluate how many cross a certain threshold
+
+pathway.covered <- data.frame(matrix(ncol = 6, nrow = 0))
+colnames(pathway.covered) <- c("covered MEF","covered BMDM", "covered both", "xu data match", "pathway" ,"covered/pathway")
+
+for (i in Kegg_ID) {
+  pathway.genes <- L[[i]]
+  pathway.expr <- data.xu.entrez[data.xu.entrez$entrez %in% pathway.genes,c(3:5)]
+  pathway.covered[i,1] <- nrow(pathway.expr[pathway.expr$WT_MEF>1,])
+  pathway.covered[i,2] <- nrow(pathway.expr[pathway.expr$WT_BMDM>1,])
+  pathway.covered[i,3] <- nrow(pathway.expr[pathway.expr$total>1,])
+  pathway.covered[i,4] <- nrow(pathway.expr)
+  pathway.covered[i,5] <- length(pathway.genes)
+  pathway.covered[i,6] <- nrow(pathway.expr[pathway.expr$total>1,]) / length(pathway.genes)
+}
+
+pathway.covered[order(-pathway.covered$`covered/pathway`),]
+```
+
+```{r}
+pathway.covered$diff <- pathway.covered$`covered MEF` - pathway.covered$`covered BMDM`
+
+pathway.covered[order(-abs(pathway.covered$diff)),]
+```
+```{r}
+pathway.covered[rownames(pathway.covered)%in%c("00010","00020","00030","00190"),]
+```
+
+
+
+```{r}
+## get list of genes in specific pathway
+# 00480 glutathione
+# 00980 xenobiotic metabolism via cytochrome450
+# 00010 glycolysis
+# 00190 oxidative phosphorylization
+
+pathway <- "00010"
+pathway.genes <- L[[pathway]]
+
+## get corresponding gene expression in xu data
+pathway.expr <- data.xu.entrez[match(pathway.genes,data.xu.entrez$entrez),] #nrow=54
+
+## get genes that are not expressed much
+pathway.expr[pathway.expr$total<1,]
+
+## evaluate how many cross a certain threshold
+# from liver zonation paper: "(mean expression higher than 5×10−6 UMI per cell)
+pathway.melted <- melt(pathway.expr[,c(1,3,4)])
+ggplot(pathway.melted,aes(V1,value,color=variable, group=variable)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle(paste("mmu",pathway,sep="")) +
+  xlab("gene")
+
+```
+
+```{r}
+## get list of genes in specific pathway
+# 00480 glutathione
+# 00980 xenobiotic metabolism via cytochrome450
+
+pathway <- "03440"
+pathway.genes <- L[[pathway]]
+
+## get corresponding gene expression in xu data
+pathway.expr <- data.xu.entrez[match(pathway.genes,data.xu.entrez$entrez),] #nrow=54
+
+## evaluate how many cross a certain threshold
+# from liver zonation paper: "(mean expression higher than 5×10−6 UMI per cell)
+pathway.melted <- melt(pathway.expr[,c(1,3,4)])
+ggplot(pathway.melted,aes(V1,value,color=variable, group=variable)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle(paste("mmu",pathway,sep="")) +
+  xlab("gene")
+
+```
+```{r}
+pathway <- "00980"
+pathway.genes <- L[[pathway]]
+
+## get corresponding gene expression in xu data
+pathway.expr <- data.xu.entrez[match(pathway.genes,data.xu.entrez$entrez),] #nrow=54
+
+## evaluate how many cross a certain threshold
+# from liver zonation paper: "(mean expression higher than 5×10−6 UMI per cell)
+pathway.melted <- melt(pathway.expr[,c(1,3,4)])
+ggplot(pathway.melted,aes(V1,value,color=variable, group=variable)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle(paste("mmu",pathway,sep="")) +
+  xlab("gene")
+
+```
+
+```{r}
+pathway <- "05212"
+pathway.genes <- L[[pathway]]
+
+## get corresponding gene expression in xu data
+pathway.expr <- data.xu.entrez[match(pathway.genes,data.xu.entrez$entrez),] #nrow=54
+
+## evaluate how many cross a certain threshold
+# from liver zonation paper: "(mean expression higher than 5×10−6 UMI per cell)
+pathway.melted <- melt(pathway.expr[,c(1,3,4)])
+ggplot(pathway.melted,aes(V1,log2(value+1),color=variable, group=variable)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle(paste("mmu",pathway,sep="")) +
+  xlab("gene")
+```
+
+
+```{r}
+## do MEFs and BMDMs express a similar total amount?
+
+print(colSums(data.xu.entrez[,c(3,4)]))
+print(formatC(signif(colSums(stress.xu[,c(3:9)]),3)))
+```
+
+
+
